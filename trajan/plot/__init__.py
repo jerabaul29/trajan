@@ -1,5 +1,7 @@
 import logging
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+from matplotlib import cm
 import cartopy.crs as ccrs
 import numpy as np
 import xarray as xr
@@ -9,6 +11,31 @@ from .land import add_land
 
 logger = logging.getLogger(__name__)
 logging.getLogger('matplotlib.font_manager').disabled = True
+
+
+class ColormapMapper:
+    """A mapper from values to RGB colors using built in colormaps
+    and scaling these."""
+
+    def __init__(self, cmap, vmin, vmax, warn_saturated=False):
+        """cmap: the matplotlib colormap to use, min: the min value to be plotted,
+        max: the max value to be plotted."""
+        self.vmin = vmin
+        self.vmax = vmax
+        self.warn_saturated = warn_saturated
+        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+        self.normalized_colormap = cm.ScalarMappable(norm=norm, cmap=cmap)
+
+    def get_rgb(self, val):
+        """Get the RGB value associated with val given the normalized colormap
+        settings."""
+        if self.warn_saturated:
+            if val < self.vmin:
+                print("ColormapMapper warning: saturated low value")
+            if val > self.vmax:
+                print("ColormapMapper warning: saturated high value")
+
+        return self.normalized_colormap.to_rgba(val)
 
 
 class Plot:
@@ -239,7 +266,7 @@ class Plot:
 
         return paths
 
-    def scatter(self, *args, **kwargs):
+    def scatter(self, color_by_trajectory_rank=False, *args, **kwargs):
         """
         Plot the particles as points.
 
@@ -267,6 +294,14 @@ class Plot:
             num = self.ds.sizes['trajectory']
             if num>100:  # If many particles, make more transparent
                 kwargs['alpha'] = np.maximum(.1, 100/np.float64(num))
+
+        if 'color_by_trajectory_rank':
+            numb = self.ds.sizes['trajectory']
+            colormap_mapper = ColormapMapper(plt.get_cmap("viridis"), 0, self.ds.sizes['trajectory'])
+            colors = np.transpose(np.vectorize(colormap_mapper.get_rgb)(np.arange(0, self.ds.sizes['trajectory'], 1.0)))
+            colors = np.repeat(colors, len(self.ds.obs))
+            kwargs['c'] = colors
+            del kwargs['color']
 
         if self.__cartesian__:
             x = self.ds.traj.tx.values.T
